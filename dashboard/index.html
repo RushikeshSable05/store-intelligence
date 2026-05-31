@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Purplle Store Intelligence</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, sans-serif; background: #1a1a2e; color: #eee; padding: 24px; }
+    h1 { color: #a855c8; margin-bottom: 4px; }
+    #status { color: #888; font-size: 13px; margin-bottom: 24px; }
+    .grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 16px; margin-bottom: 24px; }
+    .card { background: #16213e; border-radius: 8px; padding: 20px; }
+    .card h3 { font-size: 11px; text-transform: uppercase; color: #888; margin-bottom: 8px; }
+    .card .val { font-size: 28px; font-weight: bold; color: #a855c8; }
+    .card .sub { font-size: 11px; color: #555; margin-top: 4px; }
+    .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .box { background: #16213e; border-radius: 8px; padding: 20px; }
+    .box h3 { font-size: 13px; color: #aaa; margin-bottom: 16px; }
+    .anomaly { background: #2a2010; border-left: 3px solid #ffc107; padding: 10px; border-radius: 4px; margin-bottom: 8px; font-size: 13px; }
+    .anomaly strong { color: #ffc107; }
+  </style>
+</head>
+<body>
+  <h1>Purplle Store Intelligence - Brigade Road, Bangalore</h1>
+  <div id="status">Connecting to API...</div>
+
+  <div class="grid">
+    <div class="card"><h3>Total Transactions</h3><div class="val" id="txn">-</div><div class="sub">10 April 2026</div></div>
+    <div class="card"><h3>Total GMV</h3><div class="val" id="gmv">-</div><div class="sub">Gross Merchandise Value</div></div>
+    <div class="card"><h3>Avg Basket Value</h3><div class="val" id="basket">-</div><div class="sub">Per transaction</div></div>
+    <div class="card"><h3>Peak Hour</h3><div class="val" id="peak">-</div><div class="sub">Highest traffic</div></div>
+    <div class="card"><h3>Conversion Rate</h3><div class="val" id="conv">-</div><div class="sub">Walk-ins to Purchase</div></div>
+    <div class="card"><h3>Live Occupancy</h3><div class="val" id="live">-</div><div class="sub">From camera feeds</div></div>
+  </div>
+
+  <div class="charts">
+    <div class="box"><h3>Hourly Traffic</h3><canvas id="c1"></canvas></div>
+    <div class="box"><h3>Department GMV (Rs.)</h3><canvas id="c2"></canvas></div>
+    <div class="box"><h3>Conversion Funnel</h3><canvas id="c3"></canvas></div>
+    <div class="box"><h3>Anomalies Detected</h3><div id="anomList"><p style="color:#555">Loading...</p></div></div>
+  </div>
+
+<script>
+var charts = {};
+
+function makeChart(id, type, labels, data, colors) {
+  if (charts[id]) { charts[id].destroy(); }
+  charts[id] = new Chart(document.getElementById(id), {
+    type: type,
+    data: {
+      labels: labels,
+      datasets: [{ data: data, backgroundColor: colors || '#a855c8', borderColor: '#a855c8' }]
+    },
+    options: {
+      plugins: { legend: { display: type === 'doughnut' } },
+      indexAxis: type === 'bar' && id === 'c3' ? 'y' : 'x',
+      scales: type !== 'doughnut' ? { x: { ticks: { color: '#aaa' } }, y: { ticks: { color: '#aaa' } } } : {}
+    }
+  });
+}
+
+async function load() {
+  try {
+    var m = await fetch('http://localhost:8000/metrics').then(r => r.json());
+    var f = await fetch('http://localhost:8000/funnel').then(r => r.json());
+    var a = await fetch('http://localhost:8000/anomalies').then(r => r.json());
+
+    document.getElementById('status').textContent = 'Store: ' + m.store + ' | Last updated: ' + new Date().toLocaleTimeString();
+    document.getElementById('txn').textContent    = m.total_transactions;
+    document.getElementById('gmv').textContent    = 'Rs.' + m.total_gmv.toLocaleString();
+    document.getElementById('basket').textContent = 'Rs.' + m.avg_basket_value.toLocaleString();
+    document.getElementById('peak').textContent   = m.peak_hour;
+    document.getElementById('conv').textContent   = f.conversion_rate;
+    document.getElementById('live').textContent   = m.live_occupancy;
+
+    makeChart('c1', 'bar',
+      Object.keys(m.hourly_traffic).map(function(h){ return h+':00'; }),
+      Object.values(m.hourly_traffic), '#a855c8');
+
+    makeChart('c2', 'doughnut',
+      Object.keys(m.department_gmv),
+      Object.values(m.department_gmv),
+      ['#7b2d8b','#a855c8','#c084d4','#d4a8e0','#e8d4f0','#f5eefa']);
+
+    makeChart('c3', 'bar',
+      f.funnel.map(function(x){ return x.stage; }),
+      f.funnel.map(function(x){ return x.count; }),
+      ['#7b2d8b','#a855c8','#c084d4','#e8d4f0']);
+
+    var div = document.getElementById('anomList');
+    if (a.anomalies.length === 0) {
+      div.innerHTML = '<p style="color:#555">No anomalies detected</p>';
+    } else {
+      div.innerHTML = a.anomalies.map(function(x) {
+        return '<div class="anomaly"><strong>' + x.type + '</strong> [' + x.severity + ']<br>' + x.details + '</div>';
+      }).join('');
+    }
+
+  } catch(e) {
+    document.getElementById('status').textContent = 'Error: ' + e.message + ' — Is API running on port 8000?';
+  }
+}
+
+load();
+setInterval(load, 30000);
+</script>
+</body>
+</html>
